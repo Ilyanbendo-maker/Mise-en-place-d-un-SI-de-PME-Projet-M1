@@ -1,0 +1,172 @@
+---
+# =============================================================================
+# Playbook : Prérequis Veeam Agent sur machines Fedora
+# Description : Configure les dépendances système, le compte de service,
+#               les règles firewall et /etc/hosts pour l'agent Veeam.
+# Serveur Veeam : VEEAM01.cercueil.local (10.0.40.10)
+# =============================================================================
+
+- name: Prérequis Veeam Agent - Fedora
+  hosts: fedora_targets
+  become: true
+  gather_facts: true
+
+  vars:
+    veeam_server_ip: "10.0.40.10"
+    veeam_server_fqdn: "VEEAM01.cercueil.local"
+    veeam_server_hostname: "VEEAM01"
+    veeam_service_account: "svc_veeam"
+    veeam_firewall_ports:
+      - { port: "22",    proto: "tcp", comment: "SSH" }
+      - { port: "10001", proto: "tcp", comment: "Veeam Agent" }
+      - { port: "6162",  proto: "tcp", comment: "Veeam Installer" }
+
+  # ---------------------------------------------------------------------------
+  # TÂCHE 0 : Collecter la version exacte du noyau en cours d'exécution
+  # ---------------------------------------------------------------------------
+  tasks:
+
+    - name: "0.1 | Récupérer la version exacte du noyau actif"
+      ansible.builtin.command: uname -r
+      register: kernel_version
+      changed_when: false
+
+    - name: "0.2 | Afficher la version du noyau détectée"
+      ansible.builtin.debug:
+        msg: "Noyau actif : {{ kernel_version.stdout }}"
+
+  # ---------------------------------------------------------------------------
+  # TÂCHE 1 : Dépendances système
+  # ---------------------------------------------------------------------------
+
+    - name: "1.1 | Installer les paquets système requis (hors kernel-devel/headers)"
+      ansible.builtin.dnf:
+        name:
+          - tar
+          - gzip
+          - perl
+          - dkms
+        state: present
+        update_cache: true
+
+    - name: "1.2 | Installer kernel-devel correspondant au noyau actif"
+      ansible.builtin.dnf:
+        name: "kernel-devel-{{ kernel_version.stdout }}"
+        state: present
+      register: kernel_devel_install
+      # Si le paquet exact n'est plus disponible dans les dépôts, on avertit
+      # sans bloquer le playbook (à adapter selon votre politique)
+      ignore_errors: false
+
+    - name: "1.3 | Installer kernel-headers"
+      ansible.builtin.dnf:
+        name: "kernel-headers"
+        state: present
+
+  # ---------------------------------------------------------------------------
+  # TÂCHE 2 : Compte de service svc_veeam
+  # ---------------------------------------------------------------------------
+
+    - name: "2.1 | Créer le compte de service {{ veeam_service_account }}"
+      ansible.builtin.user:
+        name: "{{ veeam_service_account }}"
+        comment: "Compte de service Veeam Agent"
+        shell: /bin/bash
+        create_home: true
+        state: present
+
+    - name: "2.2 | Créer le fichier sudoers dédié à {{ veeam_service_account }}"
+      ansible.builtin.copy:
+        dest: "/etc/sudoers.d/{{ veeam_service_account }}"
+        owner: root
+        group: root
+        mode: "0440"
+        # !requiretty obligatoire : Veeam exécute des scripts en arrière-plan
+        # sans TTY ; sans cette option, sudo les refuserait sur RHEL/Fedora.
+        content: |
+          # Sudoers pour le compte de service Veeam Agent
+          # !requiretty : autorise sudo sans terminal (sessions non-interactives)
+          Defaults:{{ veeam_service_account }} !requiretty
+          {{ veeam_service_account }} ALL=(ALL) NOPASSWD: ALL
+        validate: /usr/sbin/visudo -cf %s
+
+    - name: "2.3 | Vérifier que le fichier sudoers est syntaxiquement valide"
+      ansible.builtin.command: >
+        /usr/sbin/visudo -cf /etc/sudoers.d/{{ veeam_service_account }}
+      changed_when: false
+
+  # ---------------------------------------------------------------------------
+  # TÂCHE 3 : Règles firewall (firewalld)
+  # ---------------------------------------------------------------------------
+
+    - name: "3.1 | S'assurer que firewalld est démarré et activé"
+      ansible.builtin.systemd:
+        name: firewalld
+        state: started
+        enabled: true
+
+    - name: "3.2 | Ouvrir les ports Veeam depuis {{ veeam_server_ip }} uniquement"
+      ansible.posix.firewalld:
+        rich_rule: >-
+          rule family="ipv4"
+          source address="{{ veeam_server_ip }}"
+          port port="{{ item.port }}" protocol="{{ item.proto }}"
+          accept
+        permanent: true
+        state: enabled
+        immediate: true
+      loop: "{{ veeam_firewall_ports }}"
+      loop_control:
+        label: "{{ item.comment }} (TCP {{ item.port }})"
+
+  # ---------------------------------------------------------------------------
+  # TÂCHE 4 : Résolution DNS via /etc/hosts
+  # ---------------------------------------------------------------------------
+
+    - name: "4.1 | Ajouter l'entrée FQDN du serveur Veeam dans /etc/hosts"
+      ansible.builtin.lineinfile:
+        path: /etc/hosts
+        regexp: "^{{ veeam_server_ip }}\\s"
+        line: "{{ veeam_server_ip }}    {{ veeam_server_fqdn }} {{ veeam_server_hostname }}"
+        state: present
+        backup: true
+
+  # ---------------------------------------------------------------------------
+  # TÂCHE 5 : Vérifications finales (smoke tests)
+  # ---------------------------------------------------------------------------
+
+    - name: "5.1 | Vérifier que les paquets critiques sont bien installés"
+      ansible.builtin.package_facts:
+        manager: auto
+
+    - name: "5.2 | Assertion — paquets présents"
+      ansible.builtin.assert:
+        that:
+          - "'tar'  in ansible_facts.packages"
+          - "'gzip' in ansible_facts.packages"
+          - "'perl' in ansible_facts.packages"
+          - "'dkms' in ansible_facts.packages"
+        fail_msg: "Un ou plusieurs paquets requis sont manquants !"
+        success_msg: "Tous les paquets système requis sont installés."
+
+    - name: "5.3 | Vérifier l'existence du compte {{ veeam_service_account }}"
+      ansible.builtin.getent:
+        database: passwd
+        key: "{{ veeam_service_account }}"
+
+    - name: "5.4 | Vérifier la résolution du serveur Veeam dans /etc/hosts"
+      ansible.builtin.command: "getent hosts {{ veeam_server_fqdn }}"
+      register: hosts_check
+      changed_when: false
+      failed_when: veeam_server_ip not in hosts_check.stdout
+
+    - name: "5.5 | Afficher le résumé de configuration"
+      ansible.builtin.debug:
+        msg:
+          - "=== Prérequis Veeam Agent — RÉSUMÉ ==="
+          - "Host          : {{ inventory_hostname }}"
+          - "Noyau actif   : {{ kernel_version.stdout }}"
+          - "Compte service: {{ veeam_service_account }} (sudo NOPASSWD + !requiretty)"
+          - "Ports ouverts : TCP 22, 10001, 6162 (source : {{ veeam_server_ip }})"
+          - "Résolution    : {{ veeam_server_fqdn }} -> {{ veeam_server_ip }}"
+          - "Statut        : OK — prêt pour le déploiement de l'agent Veeam"

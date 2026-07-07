@@ -1,0 +1,30 @@
+# Extraits de /etc/postfix/main.cf - Mailbox server (mailbox.cercueil.local, 10.0.32.3)
+
+inet_interfaces = all              # sinon la passerelle ne peut pas se connecter
+inet_protocols = ipv4
+
+# Domaines acceptes en remise locale
+mydestination = $myhostname, localhost.$mydomain, localhost, cercueil.fun, cercueil.local
+unknown_local_recipient_reject_code = 550   # destinataire absent de l'AD : rejet
+
+# Seules la machine elle-meme et la DMZ mail (passerelle) sont de confiance
+mynetworks = 127.0.0.0/8, 10.1.102.0/24
+
+# TLS : certificat de la PKI interne, partage avec Dovecot
+smtpd_tls_cert_file = /etc/pki/tls/certs/fullchain.pem
+smtpd_tls_key_file = /etc/pki/tls/private/dovecot.pem
+
+# Client SMTP force en TLS : aucun mail interne ne quitte la Mailbox
+# vers la DMZ en clair (contrairement a la passerelle qui reste en "may")
+smtp_tls_security_level = encrypt
+smtpd_tls_security_level = may
+
+# ----------------------------------------------------------------------
+# Extrait de /etc/postfix/master.cf - service de soumission SMTPS (port 465)
+# active pour l'envoi depuis les clients Thunderbird
+#
+# smtps     inet  n  -  n  -  -  smtpd
+#   -o syslog_name=postfix/smtps
+#   -o smtpd_tls_wrappermode=yes
+#   -o smtpd_sasl_auth_enable=yes
+#   -o smtpd_recipient_restrictions=permit_sasl_authenticated,reject

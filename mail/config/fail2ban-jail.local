@@ -1,0 +1,37 @@
+# Extraits de /etc/fail2ban/jail.local (deploye sur la passerelle ET la mailbox)
+
+[DEFAULT]
+# Liste blanche : la machine locale, la mailbox, la passerelle
+# et les IP des correcteurs, pour eviter un auto-bannissement
+ignoreip = 127.0.0.1/8 10.0.32.3 10.1.102.3
+
+# --- Passerelle : surveillance des connexions SMTP ---
+[postfix]
+enabled  = true
+mode     = more                 # filtrage approfondi des logs
+port     = smtp,ssmtp
+filter   = postfix
+logpath  = /var/log/maillog
+maxretry = 5
+findtime = 600
+bantime  = 3600
+
+# --- Mailbox : echecs d'authentification IMAP ---
+[dovecot]
+enabled  = true
+port     = pop3,pop3s,imap,imaps,sieve
+filter   = dovecot
+logpath  = /var/log/maillog
+maxretry = 5
+findtime = 600
+bantime  = 3600
+
+# --- Mailbox : echecs d'authentification SASL a la soumission ---
+[postfix-sasl]
+enabled  = true
+filter   = postfix[mode=auth]
+port     = smtp,465,submission
+logpath  = /var/log/maillog
+maxretry = 3
+findtime = 600
+bantime  = 7200

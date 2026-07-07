@@ -1,0 +1,56 @@
+---
+# Rollback du playbook clients du miroir (annulation_mirroir.yml)
+# Restaure la configuration de depots d'origine : depots publics fedora et
+# updates reactives, depots locaux et timer de mise a jour supprimes.
+
+- name: Rollback configuration miroir sur les clients
+  hosts: clients
+  become: true
+
+  tasks:
+    - name: Arreter et desactiver client-update.timer
+      ansible.builtin.systemd_service:
+        name: client-update.timer
+        state: stopped
+        enabled: false
+      failed_when: false
+
+    - name: Arreter client-update.service
+      ansible.builtin.systemd_service:
+        name: client-update.service
+        state: stopped
+      failed_when: false
+
+    - name: Supprimer l'unite client-update.timer
+      ansible.builtin.file:
+        path: /etc/systemd/system/client-update.timer
+        state: absent
+
+    - name: Supprimer l'unite client-update.service
+      ansible.builtin.file:
+        path: /etc/systemd/system/client-update.service
+        state: absent
+
+    - name: Recharger systemd
+      ansible.builtin.systemd_service:
+        daemon_reload: true
+
+    - name: Supprimer le depot local-updates
+      ansible.builtin.file:
+        path: /etc/yum.repos.d/local-updates.repo
+        state: absent
+
+    - name: Supprimer le depot local-fedora
+      ansible.builtin.file:
+        path: /etc/yum.repos.d/local-fedora.repo
+        state: absent
+
+    - name: Supprimer l'override qui desactivait fedora/updates
+      ansible.builtin.file:
+        path: /etc/dnf/repos.override.d/99-mirror-local.repo
+        state: absent
+
+    - name: Vider tout le cache DNF5
+      ansible.builtin.command:
+        cmd: dnf clean all
+      changed_when: true

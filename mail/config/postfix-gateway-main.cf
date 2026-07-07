@@ -1,0 +1,36 @@
+# Extraits de /etc/postfix/main.cf - Mail gateway (mail.cercueil.fun, 10.1.102.3)
+
+# Identite SMTP
+myhostname = mail.cercueil.fun
+mydomain = cercueil.fun
+myorigin = $mydomain
+inet_interfaces = all
+inet_protocols = ipv4
+mydestination = $myhostname, localhost.$mydomain, localhost
+mynetworks = 127.0.0.0/8, 10.1.102.0/24
+smtpd_banner = $myhostname ESMTP
+
+# Durcissement
+disable_vrfy_command = yes         # bloque l'enumeration de comptes via VRFY
+smtpd_helo_required = yes          # HELO obligatoire (base des filtres antispam)
+message_size_limit = 5242880       # 5 Mo maximum, en entree comme en sortie
+
+# Aucune authentification utilisateur sur la passerelle, protection open relay
+smtpd_sasl_auth_enable = no
+smtpd_recipient_restrictions = permit_mynetworks, reject_unauth_destination
+smtpd_relay_restrictions = permit_mynetworks, reject_unauth_destination
+
+# TLS public Let's Encrypt (certbot), opportuniste en entree comme en sortie
+smtpd_tls_cert_file = /etc/letsencrypt/live/mail.cercueil.fun/fullchain.pem
+smtpd_tls_key_file = /etc/letsencrypt/live/mail.cercueil.fun/privkey.pem
+smtpd_tls_security_level = may
+smtpd_tls_loglevel = 1
+smtp_tls_security_level = may
+smtp_tls_loglevel = 1
+
+# La passerelle accepte le domaine public et le relaie sans le stocker
+relay_domains = cercueil.fun
+transport_maps = hash:/etc/postfix/transport
+
+# Filtrage antivirus/antispam : tout le trafic transite par Amavis
+content_filter = amavisfeed:[127.0.0.1]:10024

@@ -1,0 +1,120 @@
+---
+# =============================================================================
+# Playbook : bascule des depots Fedora  metalink -> baseurl epingle
+# -----------------------------------------------------------------------------
+# BUT
+#   Sur toutes les VMs Fedora (groupe `VMs_fedora`), pour les DEUX depots
+#   ACTIFS uniquement -- [fedora] et [updates] -- :
+#     1) commenter la ligne `metalink=`
+#     2) activer un `baseurl=` pointant sur le miroir maitre dl.fedoraproject.org
+#   Les stanzas desactivees (debuginfo, source) ne sont PAS touchees.
+#
+# POURQUOI
+#   Sous whitelist, le metalink ne marche pas : il renvoie une liste dynamique
+#   de miroirs tiers (domaines imprevisibles, geo-dependants). On epingle donc
+#   un miroir unique -> un seul domaine a autoriser sur le proxy Squid.
+#
+# PROPRIETES
+#   - Idempotent : reexecutable sans effet de bord. Les regex ne matchent plus
+#     une fois la bascule faite (ligne metalink prefixee de '#', ligne baseurl
+#     deja reecrite sans 'download.example').
+#   - Sauvegarde : chaque fichier est sauvegarde (backup horodate) avant modif.
+#
+# HYPOTHESE
+#   Les fichiers /etc/yum.repos.d/fedora.repo et fedora-updates.repo sont ceux
+#   d'une install Fedora 43 standard (placeholder `download.example` encore
+#   present en commentaire). Si un hote a ete modifie a la main, comparer le
+#   backup *.NNNN apres execution.
+#
+# DEPENDANCE RESEAU (IMPORTANT)
+#   Ce playbook NE configure PAS le proxy DNF. Pour que `dnf` joigne
+#   dl.fedoraproject.org A TRAVERS le proxy Squid, il faut aussi, sur les hotes
+#   qui ne sortent pas en direct (= tous sauf le proxy 10.1.101.6 lui-meme) :
+#       proxy=http://10.1.101.6:3128   dans /etc/dnf/dnf.conf
+#   Cote Squid, dl.fedoraproject.org doit etre en `nobump` (splice) + autorise.
+#
+# LANCEMENT
+#   ansible-playbook -i inventaire.yml bascule_depots_fedora.yml -K
+#   (test a blanc : ajouter --check --diff)
+# =============================================================================
+
+- name: Basculer les depots Fedora (metalink -> baseurl epingle)
+  hosts: VMs_fedora
+  become: true
+  gather_facts: false
+
+  vars:
+    # Miroir maitre Fedora : sert le contenu en direct (pas de redirection).
+    # Pour changer de miroir (ex. miroir national), ne modifier QUE cette ligne.
+    fedora_mirror_base: "https://dl.fedoraproject.org/pub/fedora/linux"
+
+  tasks:
+    # ----- /etc/yum.repos.d/fedora.repo --------------------------------------
+    - name: "fedora.repo | commenter le metalink du depot [fedora]"
+      ansible.builtin.replace:
+        path: /etc/yum.repos.d/fedora.repo
+        regexp: '^metalink=(https://mirrors\.fedoraproject\.org/metalink\?repo=fedora-\$releasever&arch=\$basearch)$'
+        replace: '#metalink=\1'
+        backup: true
+
+    - name: "fedora.repo | activer le baseurl du depot [fedora]"
+      ansible.builtin.replace:
+        path: /etc/yum.repos.d/fedora.repo
+        regexp: '^#\s*baseurl=https?://download\.example/pub/fedora/linux/releases/\$releasever/Everything/\$basearch/os/$'
+        replace: 'baseurl={{ fedora_mirror_base }}/releases/$releasever/Everything/$basearch/os/'
+        backup: true
+
+    # ----- /etc/yum.repos.d/fedora-updates.repo ------------------------------
+    - name: "fedora-updates.repo | commenter le metalink du depot [updates]"
+      ansible.builtin.replace:
+        path: /etc/yum.repos.d/fedora-updates.repo
+        regexp: '^metalink=(https://mirrors\.fedoraproject\.org/metalink\?repo=updates-released-f\$releasever&arch=\$basearch)$'
+        replace: '#metalink=\1'
+        backup: true
+
+    - name: "fedora-updates.repo | activer le baseurl du depot [updates]"
+      ansible.builtin.replace:
+        path: /etc/yum.repos.d/fedora-updates.repo
+        regexp: '^#\s*baseurl=https?://download\.example/pub/fedora/linux/updates/\$releasever/Everything/\$basearch/$'
+        replace: 'baseurl={{ fedora_mirror_base }}/updates/$releasever/Everything/$basearch/'
+        backup: true
+
+    # ----- Depot Cisco openh264 (OPTIONNEL, mais conseille sur serveur) -------
+    # Ce depot passe AUSSI par metalink puis redirige vers le domaine de Cisco
+    # (ciscobinary.openh264.org). C'est juste le codec video H.264 pour Firefox,
+    # inutile sur un serveur. Tant qu'il reste actif et en metalink, `dnf`
+    # tentera de joindre mirrors.fedoraproject.org et ECHOUERA sous whitelist.
+    # On le desactive donc. Pour le conserver : commenter les 2 taches ci-dessous
+    # (et alors whitelister ciscobinary.openh264.org cote proxy).
+    - name: "openh264 | verifier la presence du fichier"
+      ansible.builtin.stat:
+        path: /etc/yum.repos.d/fedora-cisco-openh264.repo
+      register: openh264_repo
+
+    - name: "openh264 | desactiver le depot (inutile sur serveur)"
+      ansible.builtin.replace:
+        path: /etc/yum.repos.d/fedora-cisco-openh264.repo
+        regexp: '^enabled=1$'
+        replace: 'enabled=0'
+        backup: true
+      when: openh264_repo.stat.exists
+
+    # ----- Validation NON bloquante ------------------------------------------
+    # Reconstruit le cache. Echoue tant que le proxy DNF n'est pas configure sur
+    # l'hote (normal pour la plupart : ils sortent via le proxy). On n'arrete
+    # PAS le playbook -> on remonte juste un statut par hote.
+    - name: "Verifier l'acces aux depots (dnf makecache)"
+      ansible.builtin.command:
+        cmd: dnf -q makecache --refresh
+      register: dnf_makecache
+      changed_when: false
+      failed_when: false
+
+    - name: "Resultat de la verification par hote"
+      ansible.builtin.debug:
+        msg: >-
+          {{ 'OK - depots joignables via baseurl'
+             if dnf_makecache.rc == 0
+             else 'makecache KO (rc=' ~ dnf_makecache.rc ~ ') - attendu si le proxy DNF
+                   n est pas encore configure sur cet hote, ou si la whitelist Squid
+                   ne laisse pas encore passer dl.fedoraproject.org' }}

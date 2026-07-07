@@ -1,0 +1,159 @@
+---
+# =============================================================================
+# Playbook : mise a jour automatique quotidienne (00:00) via timer systemd
+# -----------------------------------------------------------------------------
+# - VMs Fedora  -> `dnf -y upgrade --refresh`
+# - VMs Debian  -> `apt-get update` puis `apt-get -y upgrade`
+#
+# POURQUOI UN TIMER SYSTEMD (et pas cron)
+#   systemd est toujours present (PID 1) : aucun paquet a installer, donc pas
+#   de dependance a un acces depot deja fonctionnel. Les sorties sont captees
+#   par journald -> `journalctl -u maj-auto.service` (auditable, exportable SIEM).
+#
+# PROPRIETES
+#   - Idempotent : reexecutable sans effet de bord.
+#   - Persistent=true : si la VM etait eteinte a minuit, la MAJ se lance au
+#     prochain demarrage (utile pour des VMs parfois arretees la nuit).
+#
+# DEPENDANCE RESEAU (IMPORTANT)
+#   Le timer se declenchera bien a minuit, mais la MAJ ne REUSSIRA que si
+#   l'hote atteint ses depots :
+#     - Fedora -> dl.fedoraproject.org (en direct, ou via proxy 10.1.101.6 si
+#       `proxy=` est configure dans /etc/dnf/dnf.conf)
+#     - Debian -> .debian.org (idem, via /etc/apt/apt.conf.d/00proxy)
+#   Sur les hotes sans acces depot configure, la MAJ echouera (trace dans le
+#   journal) jusqu'a ce que le proxy soit en place. C'est attendu.
+#
+# SECURITE / PRODUCTION
+#   - dnf upgrade reste DANS la release courante (baseurl epingle sur /43/) :
+#     aucun risque de saut F43->F44 (ca, c'est `dnf system-upgrade`, explicite).
+#   - L'application auto peut redemarrer des services (ex. postfix) -> bref
+#     micro-coupure. Pour une posture plus conservatrice : voir la note en fin
+#     de reponse (MAJ "securite uniquement").
+#
+# LANCEMENT
+#   ansible-playbook playbooks/maj_auto_quotidienne.yml -K
+#   (test a blanc : ajouter --check --diff)
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# PLAY 1 : Fedora (dnf)
+# -----------------------------------------------------------------------------
+- name: MAJ auto quotidienne - Fedora (dnf)
+  hosts: VMs_fedora
+  become: true
+  gather_facts: false
+
+  tasks:
+    - name: "Fedora | deposer le service oneshot (dnf upgrade)"
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/maj-auto.service
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=Mise a jour automatique quotidienne (dnf upgrade)
+          After=network-online.target
+          Wants=network-online.target
+
+          [Service]
+          Type=oneshot
+          ExecStart=/usr/bin/dnf -y upgrade --refresh
+
+    - name: "Fedora | deposer le timer (declenche a minuit)"
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/maj-auto.timer
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=Declenche la MAJ quotidienne a minuit
+
+          [Timer]
+          OnCalendar=*-*-* 00:00:00
+          Persistent=true
+
+          [Install]
+          WantedBy=timers.target
+
+    - name: "Fedora | recharger systemd, activer et demarrer le timer"
+      ansible.builtin.systemd:
+        name: maj-auto.timer
+        daemon_reload: true
+        enabled: true
+        state: started
+
+    - name: "Fedora | afficher la prochaine echeance du timer"
+      ansible.builtin.command:
+        cmd: systemctl list-timers maj-auto.timer --no-pager
+      register: timer_fedora
+      changed_when: false
+
+    - name: "Fedora | recap"
+      ansible.builtin.debug:
+        var: timer_fedora.stdout_lines
+
+# -----------------------------------------------------------------------------
+# PLAY 2 : Debian (apt)
+# -----------------------------------------------------------------------------
+- name: MAJ auto quotidienne - Debian (apt)
+  hosts: VMs_debian
+  become: true
+  gather_facts: false
+
+  tasks:
+    - name: "Debian | deposer le service oneshot (apt update + upgrade)"
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/maj-auto.service
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=Mise a jour automatique quotidienne (apt upgrade)
+          After=network-online.target
+          Wants=network-online.target
+
+          [Service]
+          Type=oneshot
+          Environment=DEBIAN_FRONTEND=noninteractive
+          # apt-get update d'abord ; si l'index echoue, on n'upgrade pas
+          ExecStartPre=/usr/bin/apt-get update
+          # --force-conf* : ne jamais bloquer sur un prompt de fichier de conf
+          ExecStart=/usr/bin/apt-get -y -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold upgrade
+
+    - name: "Debian | deposer le timer (declenche a minuit)"
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/maj-auto.timer
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=Declenche la MAJ quotidienne a minuit
+
+          [Timer]
+          OnCalendar=*-*-* 00:00:00
+          Persistent=true
+
+          [Install]
+          WantedBy=timers.target
+
+    - name: "Debian | recharger systemd, activer et demarrer le timer"
+      ansible.builtin.systemd:
+        name: maj-auto.timer
+        daemon_reload: true
+        enabled: true
+        state: started
+
+    - name: "Debian | afficher la prochaine echeance du timer"
+      ansible.builtin.command:
+        cmd: systemctl list-timers maj-auto.timer --no-pager
+      register: timer_debian
+      changed_when: false
+
+    - name: "Debian | recap"
+      ansible.builtin.debug:
+        var: timer_debian.stdout_lines

@@ -1,0 +1,76 @@
+---
+- name: Configuration du serveur miroir Fedora
+  hosts: miroir
+  become: true
+
+  tasks:
+    - name: Installer les paquets du miroir
+      ansible.builtin.dnf5:
+        name:
+          - httpd
+          - dnf5-plugins
+          - createrepo_c
+        state: present
+
+    - name: Créer le répertoire racine du miroir
+      ansible.builtin.file:
+        path: /var/www/html/mirror
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Activer et démarrer Apache (httpd)
+      ansible.builtin.systemd_service:
+        name: httpd
+        enabled: true
+        state: started
+
+    - name: Déployer l'unité systemd de synchro du miroir
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/mirror-sync.service
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=Synchronisation du miroir Fedora (updates)
+          After=network-online.target
+          Wants=network-online.target
+
+          [Service]
+          Type=oneshot
+          ExecStart=/usr/bin/dnf reposync --repoid=updates --download-path=/var/www/html/mirror --newest-only --gpgcheck --arch=x86_64
+          ExecStart=/usr/bin/createrepo_c --update /var/www/html/mirror/updates
+          ExecStart=/usr/sbin/restorecon -R /var/www/html/mirror
+
+    - name: Déployer le timer systemd de synchro du miroir
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/mirror-sync.timer
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=Declenche la synchro du miroir Fedora chaque jour
+
+          [Timer]
+          OnCalendar=daily
+          Persistent=true
+
+          [Install]
+          WantedBy=timers.target
+
+    - name: Activer et démarrer le timer de synchro
+      ansible.builtin.systemd_service:
+        name: mirror-sync.timer
+        enabled: true
+        state: started
+        daemon_reload: true
+
+    - name: Autoriser le service HTTP dans firewalld
+      ansible.posix.firewalld:
+        service: http
+        permanent: true
+        immediate: true
+        state: enabled

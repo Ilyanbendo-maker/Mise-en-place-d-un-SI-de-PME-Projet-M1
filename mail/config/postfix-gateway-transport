@@ -1,0 +1,6 @@
+# /etc/postfix/transport - table de routage statique de la passerelle
+# Tout mail a destination de @cercueil.fun est aiguille en SMTP vers le
+# serveur de boites interne (IP directe suite a un probleme de resolution DNS).
+# Tout domaine absent de cette table est rejete : un spammeur ne peut pas
+# utiliser la passerelle comme relais vers gmail.com par exemple.
+cercueil.fun    smtp:[10.0.32.3]:25
