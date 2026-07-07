@@ -1,4 +1,4 @@
-# Cercueil.fun, système d'information sécurisé (Projet P@8, EFREI Paris) (Le résumé des différents services se trouve dans le document DAT)
+# Projet P@8, EFREI Paris (Le résumé des différents services se trouve dans le document DAT)
 
 Ce dépôt présente le système d'information construit dans le cadre du projet transverse sécurité du semestre 8 (P@8) du cursus ingénieur de l'EFREI Paris. Le sujet place l'équipe dans le rôle d'une SSII appelée par une PME qui vient de perdre l'ensemble de son SI à la suite d'un grave incident de sécurité : il s'agit de concevoir puis de monter intégralement une nouvelle infrastructure sécurisée (réseau, services, administration centralisée, supervision), sous contraintes de coût (solutions libres privilégiées), de systèmes imposés (Fedora pour la messagerie et le web, Debian ou FreeBSD pour le DNS exposé, Windows Server pour l'Active Directory) et de démonstration complète en soutenance.
 
