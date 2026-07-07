@@ -1,0 +1,9 @@
+# C:\Program Files\Graylog\sidecar\sidecar.yml
+# Genere sur chaque poste par le script de deploiement GPO.
+server_url: "http://10.0.50.20:9000/api/"
+server_api_token: "[REDACTED]"
+node_name: "%COMPUTERNAME%"
+node_id: "file:C:\\Program Files\\Graylog\\sidecar\\node-id"
+update_interval: 10
+send_status: true
+tls_skip_verify: false
