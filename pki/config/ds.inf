@@ -1,0 +1,13 @@
+# ~/ds.inf sur ica01 : instance 389 Directory Server locale dediee a Dogtag
+# Creee avec : dscreate from-file ~/ds.inf
+
+[general]
+config_version = 2
+
+[slapd]
+instance_name = pki-ldap
+root_password = [REDACTED]
+
+[backend-userroot]
+sample_entries = no
+suffix = dc=pki,dc=cercueil,dc=local

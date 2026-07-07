@@ -1,0 +1,107 @@
+---
+# =============================================================================
+#  Déploiement de la CA d'entreprise (Cercueil) dans le trust store des Debian
+# -----------------------------------------------------------------------------
+#  Cible      : groupe VMs_debian (dns_maitre, dns_esclave, ...)
+#  Mécanisme  : dépôt dans /usr/local/share/ca-certificates/ (extension .crt
+#               OBLIGATOIRE) puis extraction via `update-ca-certificates`
+#  Source     : ~/Chain/ sur le noeud Ansible (control node)
+#
+#  Certificats déployés :
+#    - ca.cert.pem      -> CA RACINE        (ancre de confiance, auto-signée)
+#    - ica-signing.crt  -> CA INTERMÉDIAIRE (signe les certs serveurs/feuilles)
+#
+#  /!\ DIFFÉRENCES CLÉS avec le playbook Fedora :
+#      - dossier   : /usr/local/share/ca-certificates/  (et non /etc/pki/...)
+#      - commande  : update-ca-certificates              (et non update-ca-trust)
+#      - EXTENSION : le fichier DOIT se terminer par .crt ET être en PEM,
+#                    sinon update-ca-certificates l'IGNORE silencieusement.
+#                    -> ca.cert.pem est donc renommé en .crt au moment de la copie.
+# =============================================================================
+
+- name: Installer la CA d'entreprise dans le magasin de confiance des Debian
+  hosts: VMs_debian
+  become: true
+  gather_facts: false          # aucun fact requis ici -> exécution plus rapide
+
+  vars:
+    ca_src_dir: "{{ lookup('env', 'HOME') }}/Chain"
+    debian_ca_dir: /usr/local/share/ca-certificates
+    ca_files:
+      - src: ca.cert.pem
+        dest: cercueil-root-ca.crt
+      - src: ica-signing.crt
+        dest: cercueil-intermediate-ca.crt
+
+  tasks:
+    - name: Vérifier que les certificats source existent sur le control node
+      ansible.builtin.stat:
+        path: "{{ ca_src_dir }}/{{ item.src }}"
+      loop: "{{ ca_files }}"
+      loop_control:
+        label: "{{ item.src }}"
+      delegate_to: localhost
+      become: false
+      run_once: true
+      register: ca_src_check
+
+    - name: Stopper si un certificat source est manquant
+      ansible.builtin.assert:
+        that: item.stat.exists
+        fail_msg: "Certificat introuvable : {{ ca_src_dir }}/{{ item.item.src }}"
+        success_msg: "OK : {{ item.item.src }} présent"
+      loop: "{{ ca_src_check.results }}"
+      loop_control:
+        label: "{{ item.item.src }}"
+      delegate_to: localhost
+      become: false
+      run_once: true
+
+    # ca-certificates est présent sur ~tous les Debian ; on ne touche apt
+    # (et donc au réseau/dépôts) QUE si l'outil est réellement absent.
+    - name: Vérifier la présence de update-ca-certificates
+      ansible.builtin.shell: command -v update-ca-certificates
+      register: uca_bin
+      changed_when: false
+      failed_when: false
+
+    - name: Installer le paquet ca-certificates s'il est absent
+      ansible.builtin.apt:
+        name: ca-certificates
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+      when: uca_bin.rc != 0
+
+    - name: Copier les certificats CA (extension .crt OBLIGATOIRE sur Debian)
+      ansible.builtin.copy:
+        src: "{{ ca_src_dir }}/{{ item.src }}"
+        dest: "{{ debian_ca_dir }}/{{ item.dest }}"
+        owner: root
+        group: root
+        mode: "0644"
+      loop: "{{ ca_files }}"
+      loop_control:
+        label: "{{ item.dest }}"
+      notify: Mettre a jour les certificats CA
+
+    # On force l'exécution du handler maintenant pour pouvoir vérifier juste après
+    - name: Appliquer la mise à jour du magasin immédiatement
+      ansible.builtin.meta: flush_handlers
+
+    - name: Vérifier que la chaîne est validée par le magasin système
+      ansible.builtin.command: >-
+        openssl verify -CAfile /etc/ssl/certs/ca-certificates.crt
+        {{ debian_ca_dir }}/cercueil-intermediate-ca.crt
+      register: verify_chain
+      changed_when: false
+      failed_when: "': OK' not in verify_chain.stdout"
+
+    - name: Afficher le résultat de la vérification
+      ansible.builtin.debug:
+        msg: "{{ verify_chain.stdout }}"
+
+  handlers:
+    - name: Mettre a jour les certificats CA
+      ansible.builtin.command: update-ca-certificates
+      changed_when: true

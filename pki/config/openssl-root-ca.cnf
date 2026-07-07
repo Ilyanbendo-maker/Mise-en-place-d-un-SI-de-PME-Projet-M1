@@ -1,0 +1,58 @@
+# /root/ca/openssl.cnf sur la CA racine (10.0.70.3)
+# Configuration OpenSSL de l'autorite racine Cercueil-Fun.
+
+[ ca ]
+default_ca = CA_default
+
+[ CA_default ]
+dir               = /root/ca
+certs             = $dir/certs
+new_certs_dir     = $dir/newcerts
+database          = $dir/index.txt          # registre des certificats emis
+serial            = $dir/serial             # prochain numero de serie
+RANDFILE          = $dir/private/.rand
+private_key       = $dir/private/ca.key.pem
+certificate       = $dir/certs/ca.cert.pem
+default_md        = sha256
+name_opt          = ca_default
+cert_opt          = ca_default
+default_days      = 3650
+policy            = policy_strict
+
+[ policy_strict ]
+# La racine ne signe que des demandes du meme pays et de la meme organisation
+countryName             = match
+stateOrProvinceName     = optional
+organizationName        = match
+organizationalUnitName  = optional
+commonName              = supplied
+
+[ req ]
+default_bits        = 4096
+distinguished_name  = req_distinguished_name
+string_mask         = utf8only
+default_md          = sha256
+x509_extensions     = v3_ca
+
+[ req_distinguished_name ]
+countryName                    = Country Name (2 letter code)
+stateOrProvinceName            = State or Province Name
+localityName                   = Locality Name
+0.organizationName             = Organization Name
+organizationalUnitName         = Organizational Unit Name
+commonName                     = Common Name
+
+[ v3_ca ]
+# Extensions pour une Root CA (RFC 5280)
+subjectKeyIdentifier = hash
+authorityKeyIdentifier = keyid:always,issuer
+basicConstraints = critical, CA:true
+keyUsage = critical, digitalSignature, cRLSign, keyCertSign
+
+[ v3_intermediate_ca ]
+# Extensions pour une CA intermediaire (RFC 5280)
+# pathlen:0 : l'intermediaire ne peut pas emettre de sous-CA
+subjectKeyIdentifier = hash
+authorityKeyIdentifier = keyid:always,issuer
+basicConstraints = critical, CA:true, pathlen:0
+keyUsage = critical, digitalSignature, cRLSign, keyCertSign

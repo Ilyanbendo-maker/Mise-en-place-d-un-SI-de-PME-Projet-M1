@@ -1,0 +1,39 @@
+# Regles OPNsense (FW_2) pour le renvoi des flux web vers le proxy Squid
+# Source : notes de travail de l'equipe (projet transverse P@8, cercueil.fun)
+# Principe : par defaut tout est bloque sur OPNsense ; seuls les flux web
+# passant par le proxy (10.1.101.6, DMZ OUTBOUND) sont autorises a sortir.
+
+Prealables :
+- Retrait des regles temporaires qui laissaient sortir du flux vers Internet
+  (le proxy devient le seul point de sortie web).
+- Declaration du proxy comme passerelle sur OPNsense.
+- Creation de deux alias : un pour les VLAN configures en proxy explicite,
+  un pour les VLAN configures en proxy transparent.
+
+Regle 1 - proxy explicite :
+  action           : pass
+  protocole        : TCP
+  source           : alias VLAN explicites
+  destination      : 10.1.101.6
+  port destination : 3128
+  passerelle       : par defaut
+
+Regle 2 - HTTP transparent :
+  action           : pass
+  protocole        : TCP
+  source           : alias VLAN transparents
+  destination      : !10.0.0.0/8 (Internet)
+  port destination : 80
+  passerelle       : proxy
+
+Regle 3 - HTTPS transparent :
+  action           : pass
+  protocole        : TCP
+  source           : alias VLAN transparents
+  destination      : !10.0.0.0/8 (Internet)
+  port destination : 443
+  passerelle       : proxy
+
+Complement cote proxy (Fedora, firewalld) pour l'interception transparente :
+  firewall-cmd --permanent --zone=FedoraServer --add-forward-port=port=80:proto=tcp:toport=3127
+  firewall-cmd --permanent --zone=FedoraServer --add-forward-port=port=443:proto=tcp:toport=3129

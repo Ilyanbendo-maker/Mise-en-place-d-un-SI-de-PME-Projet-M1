@@ -1,0 +1,23 @@
+# /root/ca/openssl-dc01.cnf sur la CA racine
+# Requete de certificat serveur LDAPS pour le controleur de domaine dc01.
+# Le meme gabarit est utilise pour rodc01 (CN et SAN adaptes).
+
+[ req ]
+default_bits       = 4096
+prompt             = no
+default_md         = sha256
+distinguished_name = dn
+req_extensions     = req_ext
+
+[ dn ]
+C  = FR
+O  = Cercueil
+CN = dc01.cercueil.local
+
+[ req_ext ]
+subjectAltName = @alt_names
+extendedKeyUsage = serverAuth
+
+[ alt_names ]
+DNS.1 = dc01.cercueil.local
+DNS.2 = dc01
