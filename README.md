@@ -92,11 +92,11 @@ Une cellule vide indique une absence d'implication directe sur la brique.
 
 | Activité | Adèle | Gabriel | Ilyan | Maxime | Nicolas | Paul | Sacha | Tiphaine |
 |---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| Premier pare-feu | | | C | C | C | R/A | | C |
-| Second pare-feu | C | | C | | C | R/A | | C |
+| Premier pare-feu | | | R/A | C | C | R/A | | C |
+| Second pare-feu | C | | R/A | | C | R/A | | C |
 | DNS autoritaires (maître, esclave) | C | R/A | | C | | C | C | C |
 | Résolveurs DNS (interne, externe) | C | R/A | | C | | C | C | |
-| PKI (AC racine, AC intermédiaire, CRL/OCSP) | R/A | C | C | | C | | R/A | C |
+| PKI (AC racine, AC intermédiaire, CRL/OCSP) | R/A | C | R/A | | C | | R/A | C |
 | Active Directory | | C | | | C | C | R/A | C |
 | Messagerie (MTA, MSA, MDA) | R/A | C | | | | | C | |
 | Serveur web et ERP | R/A | | | C | C | | | |
@@ -112,6 +112,5 @@ Une cellule vide indique une absence d'implication directe sur la brique.
 | Durcissement Windows | | R/A | | C | | | R/A | |
 | Durcissement Linux | C | C | | R/A | | | R/A | |
 | Serveur de fichiers | | | | | R/A | | | |
-| Authentification DMZ, SSO, MFA (Keycloak) | | C | R/A | | | | C | |
 | ERP (Odoo) | | | | | C | | | R/A |
 | Machine d'attaque | R/A | | | | C | | | |
