@@ -1,0 +1,26 @@
+# /etc/systemd/system/pm2-web-admin.service
+# Unite systemd generee par "pm2 startup" : relance le gestionnaire PM2
+# (et donc l'API cercueil-api) au demarrage de la machine, sous le compte
+# de service non privilegie web-admin.
+[Unit]
+Description=PM2 process manager
+Documentation=https://pm2.keymetrics.io/
+After=network.target
+
+[Service]
+Type=forking
+User=web-admin
+LimitNOFILE=infinity
+LimitNPROC=infinity
+LimitCORE=infinity
+Environment=PATH=/home/web-admin/.local/bin:/home/web-admin/bin:/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin
+Environment=PM2_HOME=/home/web-admin/.pm2
+PIDFile=/home/web-admin/.pm2/pm2.pid
+Restart=on-failure
+
+ExecStart=/usr/local/lib/node_modules/pm2/bin/pm2 resurrect
+ExecReload=/usr/local/lib/node_modules/pm2/bin/pm2 reload all
+ExecStop=/usr/local/lib/node_modules/pm2/bin/pm2 kill
+
+[Install]
+WantedBy=multi-user.target
