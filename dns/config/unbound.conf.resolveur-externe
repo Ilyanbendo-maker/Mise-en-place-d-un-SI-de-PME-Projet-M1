@@ -1,0 +1,13 @@
+# /etc/unbound/unbound.conf du resolveur externe (10.1.101.5, VLAN 101) - transcrit depuis la capture de la documentation
+include: "/usr/share/unbound/fedora-defaults.conf"
+server:
+        # Ecoute uniquement sur l'IP de la DMZ outbound
+        interface: 10.1.101.5
+        access-control: 127.0.0.0/8 allow
+        # Clients autorises : le VLAN du resolveur interne et le VLAN du proxy
+        access-control: 10.0.60.0/24 allow
+        access-control: 10.1.101.0/24 allow
+        include: /etc/unbound/local.d/*.conf
+remote-control:
+include: "/etc/unbound/conf.d/*.conf"
+# Pas de forward-zone : ce serveur effectue la recursion complete vers Internet

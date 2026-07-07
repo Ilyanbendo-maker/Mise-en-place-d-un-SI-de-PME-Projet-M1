@@ -1,0 +1,19 @@
+// /etc/named.conf du DNS esclave (10.1.100.3, VLAN 100) - extrait transcrit depuis la capture de la documentation
+options {
+        // Ecoute sur toutes les interfaces
+        listen-on port 53 { any; };
+        directory "/var/named";
+        // Serveur expose : tout client (Internet compris) peut l'interroger
+        allow-query { any; };
+        recursion no;
+        dnssec-validation yes;
+};
+
+zone "cercueil.fun" IN {
+        // Miroir en lecture seule de la zone du maitre
+        type slave;
+        // Copie locale telechargee depuis le maitre (format brut, non editable)
+        file "slaves/db.cercueil.fun";
+        // IP du serveur maitre dans le VLAN 30
+        masters { 10.0.30.2; };
+};

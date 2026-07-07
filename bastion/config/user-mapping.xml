@@ -1,0 +1,7 @@
+<!-- /etc/guacamole/user-mapping.xml
+     Authentification locale de Guacamole (fichier plat).
+     Le mot de passe reel est stocke uniquement sur la VM. -->
+<user-mapping>
+    <authorize username="guacadmin" password="[REDACTED]">
+    </authorize>
+</user-mapping>

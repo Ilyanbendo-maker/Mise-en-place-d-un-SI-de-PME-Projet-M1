@@ -1,0 +1,96 @@
+---
+- name: Configuration des clients du miroir Fedora
+  hosts: clients          # JAMAIS le miroir (sinon reposync cassé)
+  become: true
+
+  tasks:
+    - name: Déployer le dépôt local-updates
+      ansible.builtin.copy:
+        dest: /etc/yum.repos.d/local-updates.repo
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          [local-updates]
+          name=Fedora Updates - Miroir Local
+          baseurl=http://10.0.30.5/mirror/updates/
+          enabled=1
+          gpgcheck=1
+          gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-fedora-$releasever-$basearch
+          proxy=_none_
+
+    - name: Déployer le dépôt local-fedora (base)
+      ansible.builtin.copy:
+        dest: /etc/yum.repos.d/local-fedora.repo
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          [local-fedora]
+          name=Fedora Base - Miroir Local
+          baseurl=http://10.0.30.5/mirror/fedora/
+          enabled=1
+          gpgcheck=1
+          gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-fedora-$releasever-$basearch
+          proxy=_none_
+
+    - name: S'assurer que le répertoire d'overrides DNF5 existe
+      ansible.builtin.file:
+        path: /etc/dnf/repos.override.d
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Désactiver les dépôts publics (override DNF5)
+      ansible.builtin.copy:
+        dest: /etc/dnf/repos.override.d/99-mirror-local.repo
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          [fedora]
+          enabled=0
+
+          [updates]
+          enabled=0
+
+    - name: Déployer l'unité systemd de mise à jour automatique
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/client-update.service
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=Mise a jour automatique depuis le miroir local
+          After=network-online.target
+          Wants=network-online.target
+
+          [Service]
+          Type=oneshot
+          ExecStart=/usr/bin/dnf upgrade -y
+
+    - name: Déployer le timer de mise à jour automatique
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/client-update.timer
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=Declenche la mise a jour automatique chaque jour
+
+          [Timer]
+          OnCalendar=*-*-* 04:00:00
+          Persistent=true
+
+          [Install]
+          WantedBy=timers.target
+
+    - name: Activer et démarrer le timer de mise à jour
+      ansible.builtin.systemd_service:
+        name: client-update.timer
+        enabled: true
+        state: started
+        daemon_reload: true

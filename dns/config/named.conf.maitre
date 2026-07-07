@@ -1,0 +1,25 @@
+// /etc/named.conf du DNS maitre (10.0.30.2, VLAN 30) - extrait transcrit depuis la capture de la documentation
+options {
+        // Ecoute limitee a la boucle locale et a l'IP du VLAN 30
+        listen-on port 53 { 127.0.0.1; 10.0.30.2; };
+        directory "/var/named";
+        // Seuls l'esclave (10.1.100.3) et le resolveur interne (10.0.60.2) peuvent l'interroger
+        allow-query { localhost; 10.1.100.3; 10.0.60.2; };
+        // Serveur strictement autoritaire, pas de recursion
+        recursion no;
+        dnssec-validation yes;
+};
+
+zone "cercueil.fun" IN {
+        // Detenteur original de la zone : seul endroit ou les modifications sont autorisees
+        type master;
+        file "/var/named/db.cercueil.fun";
+        // Transfert de zone (AXFR) reserve a l'esclave
+        allow-transfer { 10.1.100.3; };
+        // Notification de l'esclave a chaque changement de zone
+        also-notify { 10.1.100.3; };
+};
+
+// Ajouts DNSSEC (26/05/26), dans la declaration de zone :
+//   inline-signing yes;      genere en arriere-plan un miroir signe (db.cercueil.fun.signed)
+//   dnssec-policy default;   politique KASP : creation et renouvellement automatiques des cles

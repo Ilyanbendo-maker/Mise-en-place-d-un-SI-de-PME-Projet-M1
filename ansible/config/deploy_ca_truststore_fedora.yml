@@ -1,0 +1,88 @@
+---
+# =============================================================================
+#  Déploiement de la CA d'entreprise (Cercueil) dans le trust store des Fedora
+# -----------------------------------------------------------------------------
+#  Cible      : groupe VMs_fedora (workstations + serveurs Fedora)
+#  Mécanisme  : dépôt dans /etc/pki/ca-trust/source/anchors/
+#               puis extraction via `update-ca-trust extract`
+#  Source     : ~/Chain/ sur le noeud Ansible (control node)
+#
+#  Certificats déployés :
+#    - ca.cert.pem      -> CA RACINE        (ancre de confiance, auto-signée)
+#    - ica-signing.crt  -> CA INTERMÉDIAIRE (signe les certs serveurs/feuilles)
+#
+#  NB : les machines Debian (groupe VMs_debian) utilisent un AUTRE mécanisme
+#       (/usr/local/share/ca-certificates + update-ca-certificates).
+#       Elles sont volontairement hors du périmètre de ce playbook.
+# =============================================================================
+
+- name: Installer la CA d'entreprise dans le magasin de confiance des Fedora
+  hosts: VMs_fedora
+  become: true
+  gather_facts: false          # aucun fact requis ici -> exécution plus rapide
+
+  vars:
+    ca_src_dir: "{{ lookup('env', 'HOME') }}/Chain"
+    anchors_dir: /etc/pki/ca-trust/source/anchors
+    ca_files:
+      - src: ca.cert.pem
+        dest: cercueil-root-ca.crt
+      - src: ica-signing.crt
+        dest: cercueil-intermediate-ca.crt
+
+  tasks:
+    - name: Vérifier que les certificats source existent sur le control node
+      ansible.builtin.stat:
+        path: "{{ ca_src_dir }}/{{ item.src }}"
+      loop: "{{ ca_files }}"
+      loop_control:
+        label: "{{ item.src }}"
+      delegate_to: localhost
+      become: false
+      run_once: true
+      register: ca_src_check
+
+    - name: Stopper si un certificat source est manquant
+      ansible.builtin.assert:
+        that: item.stat.exists
+        fail_msg: "Certificat introuvable : {{ ca_src_dir }}/{{ item.item.src }}"
+        success_msg: "OK : {{ item.item.src }} présent"
+      loop: "{{ ca_src_check.results }}"
+      loop_control:
+        label: "{{ item.item.src }}"
+      delegate_to: localhost
+      become: false
+      run_once: true
+
+    - name: Copier les certificats CA dans le dossier des anchors
+      ansible.builtin.copy:
+        src: "{{ ca_src_dir }}/{{ item.src }}"
+        dest: "{{ anchors_dir }}/{{ item.dest }}"
+        owner: root
+        group: root
+        mode: "0644"
+      loop: "{{ ca_files }}"
+      loop_control:
+        label: "{{ item.dest }}"
+      notify: Mettre a jour le trust store
+
+    # On force l'exécution du handler maintenant pour pouvoir vérifier juste après
+    - name: Appliquer la mise à jour du trust store immédiatement
+      ansible.builtin.meta: flush_handlers
+
+    - name: Vérifier que la CA est bien reconnue (trust list)
+      ansible.builtin.shell: "trust list | grep -i 'cercueil' || true"
+      register: trust_check
+      changed_when: false
+
+    - name: Afficher les ancres Cercueil trouvées
+      ansible.builtin.debug:
+        msg: >-
+          {{ trust_check.stdout_lines
+             if (trust_check.stdout_lines | length > 0)
+             else ['ATTENTION : aucune ancre Cercueil détectée, à vérifier manuellement'] }}
+
+  handlers:
+    - name: Mettre a jour le trust store
+      ansible.builtin.command: update-ca-trust extract
+      changed_when: true

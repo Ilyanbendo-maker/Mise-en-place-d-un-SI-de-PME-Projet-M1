@@ -1,0 +1,28 @@
+# /etc/unbound/unbound.conf du resolveur interne (10.0.60.2, VLAN 60) - transcrit depuis la capture de la documentation
+include: "/usr/share/unbound/fedora-defaults.conf"
+server:
+        # Ecoute uniquement sur l'IP du VLAN 60
+        interface: 10.0.60.2
+        access-control: 127.0.0.0/8 allow
+        # Seules les machines du site interne 10.0.0.0/16 peuvent resoudre
+        access-control: 10.0.0.0/16 allow
+        # Desactive le filtrage natif des TLD non routables pour permettre la redirection vers l'AD
+        local-zone: "cercueil.local." transparent
+        # Validation DNSSEC desactivee pour ces deux zones internes
+        domain-insecure: "cercueil.local"
+        domain-insecure: "cercueil.fun"
+        include: /etc/unbound/local.d/*.conf
+remote-control:
+include: "/etc/unbound/conf.d/*.conf"
+# Zone stub : interrogation directe du DNS maitre pour cercueil.fun, avec cache
+stub-zone:
+        name: "cercueil.fun"
+        stub-addr: 10.0.30.2
+# cercueil.local est delegue au controleur de domaine Active Directory
+forward-zone:
+        name: "cercueil.local"
+        forward-addr: 10.0.70.5
+# Tout le reste part vers le resolveur externe en DMZ outbound
+forward-zone:
+        name: "."
+        forward-addr: 10.1.101.5
